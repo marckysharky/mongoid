@@ -66,6 +66,7 @@ module Rails
             handle_configuration_error(e)
           end
         end
+        ::Mongoid::Telemetry.adapter = ::ActiveSupport::Notifications
       end
 
       # Set the proper error types for Rails. DocumentNotFound errors should be

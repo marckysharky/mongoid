@@ -5,6 +5,7 @@ require "mongoid/contextual/command"
 require "mongoid/contextual/geo_near"
 require "mongoid/contextual/map_reduce"
 require "mongoid/association/eager_loadable"
+require "mongoid/telemetry"
 
 module Mongoid
   module Contextual
@@ -67,8 +68,10 @@ module Mongoid
       #
       # @since 3.0.0
       def count(options = {}, &block)
-        return super(&block) if block_given?
-        try_cache(:count) { view.count(options) }
+        Mongoid::Telemetry.call('count', klass: klass) do
+          return super(&block) if block_given?
+          try_cache(:count) { view.count(options) }
+        end
       end
 
       # Delete all documents in the database that match the selector.
@@ -80,7 +83,9 @@ module Mongoid
       #
       # @since 3.0.0
       def delete
-        view.delete_many.deleted_count
+        Mongoid::Telemetry.call('delete', klass: klass) do
+          view.delete_many.deleted_count
+        end
       end
       alias :delete_all :delete
 
@@ -93,10 +98,12 @@ module Mongoid
       #
       # @since 3.0.0
       def destroy
-        each.inject(0) do |count, doc|
-          doc.destroy
-          count += 1 if acknowledged_write?
-          count
+        Mongoid::Telemetry.call('destroy', klass: klass) do
+          each.inject(0) do |count, doc|
+            doc.destroy
+            count += 1 if acknowledged_write?
+            count
+          end
         end
       end
       alias :destroy_all :destroy
@@ -112,8 +119,10 @@ module Mongoid
       #
       # @since 3.0.0
       def distinct(field)
-        view.distinct(klass.database_field_name(field)).map do |value|
-          value.class.demongoize(value)
+        Mongoid::Telemetry.call('distinct', klass: klass) do
+          view.distinct(klass.database_field_name(field)).map do |value|
+            value.class.demongoize(value)
+          end
         end
       end
 
@@ -153,11 +162,13 @@ module Mongoid
       #
       # @since 3.0.0
       def exists?
-        return !documents.empty? if cached? && cache_loaded?
-        return @count > 0 if instance_variable_defined?(:@count)
+        Mongoid::Telemetry.call('exists', klass: klass) do
+          return !documents.empty? if cached? && cache_loaded?
+          return @count > 0 if instance_variable_defined?(:@count)
 
-        try_cache(:exists) do
-          !!(view.projection(_id: 1).limit(1).first)
+          try_cache(:exists) do
+            !!(view.projection(_id: 1).limit(1).first)
+          end
         end
       end
 
@@ -170,7 +181,9 @@ module Mongoid
       #
       # @since 3.0.0
       def explain
-        view.explain
+        Mongoid::Telemetry.call('explain', klass: klass) do
+          view.explain
+        end
       end
 
       # Execute the find and modify command, used for MongoDB's
@@ -190,8 +203,10 @@ module Mongoid
       #
       # @since 5.0.0
       def find_one_and_update(update, options = {})
-        if doc = view.find_one_and_update(update, options)
-          Factory.from_db(klass, doc)
+        Mongoid::Telemetry.call('find_one_and_update', klass: klass) do
+          if doc = view.find_one_and_update(update, options)
+            Factory.from_db(klass, doc)
+          end
         end
       end
 
@@ -212,8 +227,10 @@ module Mongoid
       #
       # @since 5.0.0
       def find_one_and_replace(replacement, options = {})
-        if doc = view.find_one_and_replace(replacement, options)
-          Factory.from_db(klass, doc)
+        Mongoid::Telemetry.call('find_one_and_replace', klass: klass) do
+          if doc = view.find_one_and_replace(replacement, options)
+            Factory.from_db(klass, doc)
+          end
         end
       end
 
@@ -227,8 +244,10 @@ module Mongoid
       #
       # @since 5.0.0
       def find_one_and_delete
-        if doc = view.find_one_and_delete
-          Factory.from_db(klass, doc)
+        Mongoid::Telemetry.call('find_one_and_delete', klass: klass) do
+          if doc = view.find_one_and_delete
+            Factory.from_db(klass, doc)
+          end
         end
       end
 
@@ -252,17 +271,19 @@ module Mongoid
       #
       # @since 3.0.0
       def first(opts = {})
-        return documents.first if cached? && cache_loaded?
-        try_cache(:first) do
-          if sort = view.sort || ({ _id: 1 } unless opts[:id_sort] == :none)
-            if raw_doc = view.sort(sort).limit(-1).first
-              doc = Factory.from_db(klass, raw_doc, criteria)
-              eager_load([doc]).first
-            end
-          else
-            if raw_doc = view.limit(-1).first
-              doc = Factory.from_db(klass, raw_doc, criteria)
-              eager_load([doc]).first
+        Mongoid::Telemetry.call('first', klass: klass) do
+          return documents.first if cached? && cache_loaded?
+          try_cache(:first) do
+            if sort = view.sort || ({ _id: 1 } unless opts[:id_sort] == :none)
+              if raw_doc = view.sort(sort).limit(-1).first
+                doc = Factory.from_db(klass, raw_doc, criteria)
+                eager_load([doc]).first
+              end
+            else
+              if raw_doc = view.limit(-1).first
+                doc = Factory.from_db(klass, raw_doc, criteria)
+                eager_load([doc]).first
+              end
             end
           end
         end
@@ -275,10 +296,12 @@ module Mongoid
       #
       # @since 4.0.2
       def find_first
-        return documents.first if cached? && cache_loaded?
-        if raw_doc = view.first
-          doc = Factory.from_db(klass, raw_doc, criteria)
-          eager_load([doc]).first
+        Mongoid::Telemetry.call('find_first', klass: klass) do
+          return documents.first if cached? && cache_loaded?
+          if raw_doc = view.first
+            doc = Factory.from_db(klass, raw_doc, criteria)
+            eager_load([doc]).first
+          end
         end
       end
 
@@ -302,7 +325,9 @@ module Mongoid
       #
       # @since 3.1.0
       def geo_near(coordinates)
-        GeoNear.new(collection, criteria, coordinates)
+        Mongoid::Telemetry.call('geo_near', klass: klass) do
+          GeoNear.new(collection, criteria, coordinates)
+        end
       end
 
       # Invoke the block for each element of Contextual. Create a new array
@@ -321,10 +346,12 @@ module Mongoid
       #
       # @return [ Array ] The result of mapping.
       def map(field = nil, &block)
-        if block_given?
-          super(&block)
-        else
-          criteria.pluck(field)
+        Mongoid::Telemetry.call('map', klass: klass) do
+          if block_given?
+            super(&block)
+          else
+            criteria.pluck(field)
+          end
         end
       end
 
@@ -365,11 +392,13 @@ module Mongoid
       #
       # @since 3.0.0
       def last(opts = {})
-        try_cache(:last) do
-          with_inverse_sorting(opts) do
-            if raw_doc = view.limit(-1).first
-              doc = Factory.from_db(klass, raw_doc, criteria)
-              eager_load([doc]).first
+        Mongoid::Telemetry.call('last', klass: klass) do
+          try_cache(:last) do
+            with_inverse_sorting(opts) do
+              if raw_doc = view.limit(-1).first
+                doc = Factory.from_db(klass, raw_doc, criteria)
+                eager_load([doc]).first
+              end
             end
           end
         end
@@ -496,7 +525,9 @@ module Mongoid
       #
       # @since 3.0.0
       def update(attributes = nil, opts = {})
-        update_documents(attributes, :update_one, opts)
+        Mongoid::Telemetry.call('update', klass: klass) do
+          update_documents(attributes, :update_one, opts)
+        end
       end
 
       # Update all the matching documents atomically.
@@ -514,7 +545,9 @@ module Mongoid
       #
       # @since 3.0.0
       def update_all(attributes = nil, opts = {})
-        update_documents(attributes, :update_many, opts)
+        Mongoid::Telemetry.call('update_all', klass: klass) do
+          update_documents(attributes, :update_many, opts)
+        end
       end
 
       private
