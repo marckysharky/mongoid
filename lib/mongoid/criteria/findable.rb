@@ -36,9 +36,11 @@ module Mongoid
       #
       # @since 1.0.0
       def find(*args)
-        ids = args.__find_args__
-        raise_invalid if ids.any?(&:nil?)
-        for_ids(ids).execute_or_raise(ids, args.multi_arged?)
+        Mongoid::Telemetry.call('find', { klass: klass }) do
+          ids = args.__find_args__
+          raise_invalid if ids.any?(&:nil?)
+          for_ids(ids).execute_or_raise(ids, args.multi_arged?)
+        end
       end
 
       # Adds a criterion to the +Criteria+ that specifies an id that must be matched.
@@ -53,11 +55,13 @@ module Mongoid
       #
       # @return [ Criteria ] The cloned criteria.
       def for_ids(ids)
-        ids = mongoize_ids(ids)
-        if ids.size > 1
-          send(id_finder, { _id: { "$in" => ids }})
-        else
-          send(id_finder, { _id: ids.first })
+        Mongoid::Telemetry.call('for_ids', { klass: klass }) do
+          ids = mongoize_ids(ids)
+          if ids.size > 1
+            send(id_finder, { _id: { "$in" => ids }})
+          else
+            send(id_finder, { _id: ids.first })
+          end
         end
       end
 
@@ -71,9 +75,11 @@ module Mongoid
       #
       # @return [ Array<Document> ] The found documents.
       def multiple_from_db(ids)
-        return entries if embedded?
-        ids = mongoize_ids(ids)
-        ids.empty? ? [] : from_database(ids)
+        Mongoid::Telemetry.call('multiple_from_db', { klass: klass }) do
+          return entries if embedded?
+          ids = mongoize_ids(ids)
+          ids.empty? ? [] : from_database(ids)
+        end
       end
 
       private

@@ -172,20 +172,22 @@ module Mongoid
       #
       # @since 3.0.0
       def create_document(method, attrs = nil, &block)
-        attributes = selector.reduce(attrs ? attrs.dup : {}) do |hash, (key, value)|
-          unless invalid_key?(hash, key) || invalid_embedded_doc?(value)
-            hash[key] = value
+        Mongoid::Telemetry.call('create_document', klass: klass) do
+          attributes = selector.reduce(attrs ? attrs.dup : {}) do |hash, (key, value)|
+            unless invalid_key?(hash, key) || invalid_embedded_doc?(value)
+              hash[key] = value
+            end
+            hash
           end
-          hash
-        end
-        if embedded?
-          attributes[:_parent] = parent_document
-          attributes[:_association] = association
-        end
-        if polymorphic? && @criterion
-          klass.__send__(method, attributes.merge(@criterion), &block)
-        else
-          klass.__send__(method, attributes, &block)
+          if embedded?
+            attributes[:_parent] = parent_document
+            attributes[:_association] = association
+          end
+          if polymorphic? && @criterion
+            klass.__send__(method, attributes.merge(@criterion), &block)
+          else
+            klass.__send__(method, attributes, &block)
+          end
         end
       end
 
